@@ -404,12 +404,6 @@ class LinearCRF(object):
         print("Start training!")
         
         start_time = time.time()
-        self.ncallable(self.weights)
-        print("Callable Time cost:{}s".format(time.time() - start_time))
-        start_time = time.time()
-        self.njac_callable(self.weights)
-        print("Jac_callable Time cost:{}s".format(time.time() - start_time))
-        start_time = time.time()
         res = minimize(self.ncallable, self.weights, method='L-BFGS-B',
                    jac=self.njac_callable, options={'disp': True, 'maxiter': 1000})
         print("minimize Time cost:{}s".format(time.time() - start_time))
