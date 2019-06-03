@@ -428,13 +428,13 @@ class LinearCRF(object):
         save_dict['nweights'] = self.nweights
         save_dict['index_word'] = self.index_word
         save_dict['weights'] = self.weights
-        with open(file_path, 'w') as f:
+        with open(file_path, 'wb') as f:
             pickle.dump(save_dict, f)
         print("Save model successful!")
 
 
     def load(self, file_path):
-        with open(file_path, 'r') as f:
+        with open(file_path, 'rb') as f:
             save_dict = pickle.load(f)
 
         self.nwords = save_dict['nwords']
