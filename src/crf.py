@@ -416,7 +416,7 @@ class LinearCRF(object):
         # self.test()
 
 
-    def save(self, file_path='model/linear_crf.model'):
+    def save(self, file_path='linear_crf.model'):
         save_dict = {}
         save_dict['nwords'] = self.nwords
         save_dict['nfeatures'] = self.nfeatures
