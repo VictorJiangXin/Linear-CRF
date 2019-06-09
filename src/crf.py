@@ -12,8 +12,7 @@ import pickle
 import codecs
 import pickle
 import numpy as np
-from scipy.optimize import minimize
-
+from scipy import optimize
 
 class LinearCRF(object):
     """Simple implementation of linear-chain CRF for Chinese word segmentation task.
@@ -54,12 +53,10 @@ class LinearCRF(object):
         self.nfeatures = 0
         self.feature_index = {} # {('U', 0, word_id, tag_id):0}
         self.index_feature = {} # {0:('U', 0, word_id, tag_id)}
-        self.prior_feature_count = np.zeros(self.nfeatures)    # the feature count of corpus, we need this var, when we train our crf
 
         self.nweights = 0
         self.weights = np.zeros(self.nweights)
-        self.theta = 1e-4   # theta should in the range of (1e-6 ~ 1e-3)
-        self.train_data = []
+        self.theta = 1e-3   # theta should in the range of (1e-6 ~ 1e-3)
 
 
     def feature_at(self, k, x, yi_1, yi, i):
@@ -89,21 +86,25 @@ class LinearCRF(object):
         return 0
 
 
-    def log_potential_at(self, x, yi_1, yi, i):
+    def log_M_at(self, x, yi_1, yi, i):
         """Calc log M(yi_1, yi|x) = W.F_i(yi_1, yi|x)
         """
         activate_feature = []
         for pos in self.U_feature_pos:
             if pos + i >= 0 and pos + i < len(x):
-                activate_feature.append(self.feature_index[('U', pos, x[pos + i], yi)])
+                feature = ('U', pos, x[pos + i], yi)
+                if feature in self.feature_index:
+                    activate_feature.append(self.feature_index[feature])
 
         for pos in self.B_feature_pos:
             if pos + i >= 1 and pos + i < len(x):
-                activate_feature.append(self.feature_index[('B', pos, x[pos + i], yi_1, yi)])
+                feature = ('B', pos, x[pos + i], yi_1, yi)
+                if feature in self.feature_index:
+                    activate_feature.append(self.feature_index[feature])
         return self.weights[activate_feature].sum()
 
 
-    def log_potential_matrix(self, x):
+    def log_M(self, x):
         """Get log probablity matrix M(x)
 
         Return:
@@ -114,7 +115,7 @@ class LinearCRF(object):
         for i in range(1, nwords_x + 2):
             for tag1 in range(self.ntags):
                 for tag2 in range(self.ntags):
-                    M[i, tag1, tag2] = self.log_potential_at(x, tag1, tag2, i)
+                    M[i, tag1, tag2] = self.log_M_at(x, tag1, tag2, i)
         return M
 
 
@@ -127,6 +128,7 @@ class LinearCRF(object):
         """Get forward probablity log a(i, x).
         
         a(i, x, Yt) = sum_{y}a(i-1, x, y)*M(i-1, x, y, Yt)
+        so log(a(i, tag)) = log sum exp(log a(i-1) + log M(, :, tag))
 
         Args:
             x: sequence
@@ -139,7 +141,7 @@ class LinearCRF(object):
         alpha = np.zeros((nwords_x + 1, self.ntags))
 
         if M is None:
-            M = self.log_potential_matrix(x)
+            M = self.log_M(x)
 
         alpha[1] = M[1, self.start_index, :]
         for i in range(2, nwords_x + 1):
@@ -164,31 +166,30 @@ class LinearCRF(object):
         beta = np.zeros((nwords_x + 1, self.ntags))
 
         if M is None:
-            M = self.log_potential_matrix(x)
+            M = self.log_M(x)
 
         beta[nwords_x] = M[nwords_x+1, :, self.end_index]
-        for i in range(1, nwords_x):
+        for i in range(nwords_x - 1, 0, -1):
             for tag in range(self.ntags):
-                index = nwords_x - i
-                beta[index][tag] = self.log_sum_exp(beta[index+1] + M[index+1, tag, :])
+                beta[i, tag] = self.log_sum_exp(beta[i+1] + M[i+1, tag, :])
         return beta
 
 
-    def log_z(self, x, M=None, alpha=None):
+    def log_z(self, x, M=None, beta=None):
         """Get log Z(x)
         """
         nwords_x = len(x) - 2
 
         if M is None:
-            M = self.log_potential_matrix(x)
-        if alpha is None:
-            alpha = self.log_alpha(x, M)
+            M = self.log_M(x)
+        if beta is None:
+            beta = self.log_beta(x, M)
 
-        z = self.log_sum_exp(alpha[nwords_x] + M[nwords_x+1, :, self.end_index])
+        z = self.log_sum_exp(beta[1] + M[1, self.start_index, :])
         return z
 
 
-    def log_potential(self, x, y, M=None, alpha=None):
+    def log_potential(self, x, y, M=None, beta=None):
         """Calculate log p(y|x).
 
         log p(y|x) = log exp(sum(W.Feature)) - log Z(x)
@@ -196,14 +197,14 @@ class LinearCRF(object):
         nwords_x = len(y) - 2   # every sentence include <START> and <END>
 
         if M is None:
-            M = self.log_potential_matrix(x)
-        if alpha is None:
-            alpha = self.log_alpha(x, M)
+            M = self.log_M(x)
+        if beta is None:
+            beta = self.log_beta(x, M)
 
         log_p = 0
         for i in range(1, nwords_x + 1):
-            log_p += self.log_potential_at(x, y[i-1], y[i], i)
-        z = self.log_z(x, M, alpha)
+            log_p += self.log_M_at(x, y[i-1], y[i], i)
+        z = self.log_z(x, M, beta)
         log_p -= z
         return log_p
 
@@ -219,7 +220,7 @@ class LinearCRF(object):
         trace = np.zeros((nwords_x + 1, self.ntags), dtype='int')
 
         if M is None:
-            M = self.log_potential_matrix(x)
+            M = self.log_M(x)
         
         delta[1] = M[1, self.start_index, :]
         for i in range(2, nwords_x + 1):
@@ -249,15 +250,15 @@ class LinearCRF(object):
         nwords_x = len(x) - 2
 
         if M is None:
-            M = self.log_potential_matrix(x)
+            M = self.log_M(x)
         if alpha is None:
             alpha = self.log_alpha(x, M)
         if beta is None:
             beta = self.log_beta(x, M)
 
-        z = self.log_z(x, M, alpha)
+        z = self.log_z(x, M, beta)
         P = np.zeros((nwords_x + 1, self.ntags, self.ntags))
-        gradient = np.zeros(self.weights.shape)
+        gradient = np.zeros(self.nweights)
 
         for i in range(1, nwords_x + 1):
             for yi_1 in range(self.ntags):
@@ -266,54 +267,46 @@ class LinearCRF(object):
                         continue
                     P[i, yi_1, yi] = alpha[i-1, yi_1] + M[i, yi_1, yi] + beta[i, yi] - z
 
+        # gradient = p(x, yi_1, yi) * C_k(x, yi_1, yi), not log p(x, yi_1, yi)!!
         P = np.exp(P)
         activate_feature = []
         for i in range(1, nwords_x + 1):
             for yi_1 in range(self.ntags):
                 for yi in range(self.ntags):
+                    # U feature
                     for pos in self.U_feature_pos:
                         if pos + i >= 0 and pos + i < len(x):
-                            activate_feature.append(self.feature_index[('U', pos, x[pos + i], yi)])
-
+                            feature = ('U', pos, x[pos + i], yi)
+                            if feature in self.feature_index:
+                                activate_feature.append(self.feature_index[feature])
+                    # B feature
                     for pos in self.B_feature_pos:
                         if pos + i >= 1 and pos + i < len(x):
-                            activate_feature.append(self.feature_index[('B', pos, x[pos + i], yi_1, yi)])
+                            feature = ('B', pos, x[pos + i], yi_1, yi)
+                            if feature in self.feature_index:
+                                activate_feature.append(self.feature_index[feature])
                     gradient[activate_feature] += P[i, yi_1, yi]
 
         return gradient
 
 
-    def log_maximum_liklihood(self):
-        """L = sum(log(p(y^i|x^i))) - sum(weight_k^2)*theta/2
-        """
-        log_ML = 0.
-        for x, y in self.train_data:
-            log_ML += self.log_potential(x, y)
-        log_ML -= np.dot(self.weights, self.weights) * self.theta / 2
-        return log_ML
-
-
-    def model_gradient(self):
-        """Get eL/eW
-        """
-        gradient = self.prior_feature_count - self.weights * self.theta
-        for x, _ in self.train_data:
-            gradient -= self.model_gradient_x(x)
-        return gradient
-
-
-    def ncallable(self, weights):
-        """We want maximum L equal minimum -L
+    def neg_likelihood_and_gradient(self, weights, prior_feature_count, train_data):
+        """Return -L(x), f'(L)
         """
         self.weights = weights
-        return -self.log_maximum_liklihood()
+        likelihood = 0
+        gradient = np.zeros(self.nweights)
+        for x, y in train_data:
+            M = self.log_M(x)
+            alpha = self.log_alpha(x, M)
+            beta = self.log_beta(x, M)
+            likelihood += self.log_potential(x, y, M, beta)
+            gradient -= self.model_gradient_x(x, M, alpha, beta)
+        # add regulariser
+        likelihood = likelihood - np.dot(self.weights, self.weights) * self.theta / 2
+        gradient = prior_feature_count - gradient - self.weights * self.theta
 
-
-    def njac_callable(self, weights):
-        """We want maximum L equal minimum -L so as the gradient
-        """
-        self.weights = weights
-        return -self.model_gradient()
+        return -likelihood, -gradient
 
 
     def train(self, file_name):
@@ -372,49 +365,49 @@ class LinearCRF(object):
 
         self.nfeatures = feature_id
         self.nweights = self.nfeatures
-        self.prior_feature_count = np.zeros(self.nfeatures)
-        self.weights = np.ones(self.nweights) / self.nweights
+        prior_feature_count = np.zeros(self.nfeatures)
+        self.weights = np.random.randn(self.nweights)
 
-        print("Features: {}".format(self.nfeatures))
+        print("Feature nums: {}".format(self.nfeatures))
 
         sentences = [[self.word_index[char] for char in s] for s in sentences]
         labels = [[self.tag_index[tag] for tag in label] for label in labels]
 
-        print("sentence[0]:{} labels[0]:{}".format(sentences[0], labels[0]))
+        print("sentence[0]:\n{}\n labels[0]:\n{}\n".format(sentences[0], labels[0]))
 
-        self.train_data = [(x, y) for (x, y) in zip(sentences, labels)]
+        train_data = [(x, y) for (x, y) in zip(sentences, labels)]
 
         del sentences
         del labels
         # get C(y, x)
-        for x, y in self.train_data:
+        for x, y in train_data:
             n = len(x) - 2
             for i in range(1, n + 1):
                 activate_feature = []
                 for pos in self.U_feature_pos:
                     if pos + i >= 0 and pos + i < len(x):
-                        activate_feature.append(self.feature_index[('U', pos, x[pos + i], y[i])])
+                        feature = ('U', pos, x[pos + i], y[i])
+                        if feature in self.feature_index:
+                            activate_feature.append(self.feature_index[feature])
 
                 for pos in self.B_feature_pos:
                     if pos + i >= 1 and pos + i < len(x):
-                        activate_feature.append(self.feature_index[('B', pos, x[pos + i], y[i-1], y[i])])
+                        feature = ('B', pos, x[pos + i], y[i-1], y[i])
+                        if feature in self.feature_index:
+                            activate_feature.append(self.feature_index[feature])
 
-                self.prior_feature_count[activate_feature] += 1
+                prior_feature_count[activate_feature] += 1
+
+        print("prior_feature_count[0]: {} {}".format(self.index_feature[0], prior_feature_count[0]))
 
         print("Start training!")
-        
+        func = lambda weights : self.neg_likelihood_and_gradient(weights, prior_feature_count, train_data)
         start_time = time.time()
-        res = minimize(self.ncallable, self.weights, method='L-BFGS-B',
-                   jac=self.njac_callable, options={'disp': True, 'maxiter': 1000})
-        print("minimize Time cost:{}s".format(time.time() - start_time))
-        if res.success:
-            self.weights = res.x
-            self.save()
-        else:
-            print("Fail to optimize CRF!")
-        
-        # self.test()
+        res = optimize.fmin_l_bfgs_b(func, self.weights, iprint=0, disp=1, maxiter=300)
+        print("Training time:{}s".format(time.time() - start_time))
 
+        self.save()
+        
 
     def save(self, file_path='linear_crf.model'):
         save_dict = {}
@@ -424,7 +417,6 @@ class LinearCRF(object):
         save_dict['index_feature'] = self.index_feature
         save_dict['index_word'] = self.index_word
         save_dict['word_index'] = self.word_index
-        save_dict['prior_feature_count'] = self.prior_feature_count
         save_dict['nweights'] = self.nweights
         save_dict['index_word'] = self.index_word
         save_dict['weights'] = self.weights
@@ -443,7 +435,6 @@ class LinearCRF(object):
         self.index_feature = save_dict['index_feature'] 
         self.index_word = save_dict['index_word']
         self.word_index = save_dict['word_index']
-        self.prior_feature_count = save_dict['prior_feature_count']
         self.nweights = save_dict['nweights']
         self.index_word = save_dict['index_word']
         self.weights = save_dict['weights']
