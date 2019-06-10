@@ -56,7 +56,7 @@ class LinearCRF(object):
 
         self.nweights = 0
         self.weights = np.zeros(self.nweights)
-        self.theta = 1e-3   # theta should in the range of (1e-6 ~ 1e-3)
+        self.theta = 1e-4   # theta should in the range of (1e-6 ~ 1e-3)
 
 
     def feature_at(self, k, x, yi_1, yi, i):
@@ -309,12 +309,15 @@ class LinearCRF(object):
         return -likelihood, -gradient
 
 
-    def train(self, file_name):
+    def train(self, file_name, model_path=None):
         """Train this model
 
         Args:
             file_name: corpus file
         """
+        if model_path is not None:
+            self.load(model_path)
+
         sentences = []
         labels = []
 
@@ -403,7 +406,7 @@ class LinearCRF(object):
         print("Start training!")
         func = lambda weights : self.neg_likelihood_and_gradient(weights, prior_feature_count, train_data)
         start_time = time.time()
-        res = optimize.fmin_l_bfgs_b(func, self.weights, iprint=0, disp=1, maxiter=300)
+        res = optimize.fmin_l_bfgs_b(func, self.weights, iprint=0, disp=1, maxiter=300, maxls=100)
         print("Training time:{}s".format(time.time() - start_time))
 
         self.save()
