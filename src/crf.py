@@ -332,8 +332,10 @@ class LinearCRF(object):
                 # sentence end
                 sentence.append(self.end_char)
                 label.append(self.end_tag)
-                sentences.append(sentence)
-                labels.append(label)
+                if len(sentence) > 3:
+                    sentences.append(sentence)
+                    labels.append(label)
+                
                 sentence = [self.start_char]
                 label = [self.start_tag]
             else:
@@ -407,6 +409,7 @@ class LinearCRF(object):
         func = lambda weights : self.neg_likelihood_and_gradient(weights, prior_feature_count, train_data)
         start_time = time.time()
         res = optimize.fmin_l_bfgs_b(func, self.weights, iprint=0, disp=1, maxiter=300, maxls=100)
+
         print("Training time:{}s".format(time.time() - start_time))
 
         self.save()
