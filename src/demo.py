@@ -18,5 +18,5 @@ class CN_Segementation(object):
         for word, tag in zip(sentence, tags):
             str_seg += word
             if tag == 'S' or tag == 'E':
-                str_seg += '\t'
+                str_seg += ' '
         return str_seg

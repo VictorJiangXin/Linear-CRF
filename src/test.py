@@ -33,44 +33,31 @@ def test_file(model_path, test_file_path):
 
     sentences = []
     labels = []
-    sentence = [model.start_char]
-    label = [model.start_tag]
+    sentence = []
+    label = []
     for line in lines:
         if len(line) < 2:
                 # sentence end
-            sentence.append(model.end_char)
-            label.append(model.end_tag)
             sentences.append(sentence)
             labels.append(label)
-            sentence = [model.start_char]
-            label = [model.start_tag]
+            sentence = []
+            label = []
         else:
             char, tag = line.split()
             sentence.append(char)
             label.append(tag)
-            if char not in model.word_index:
-                model.word_index[char] = model.nwords
-                model.index_word[model.nwords] = char
-                model.nwords += 1
 
-    sentences_in_id = [[model.word_index[char] if char in model.word_index else model.nwords for char in s] for s in sentences]
-
-    pre_tags = []
-    for sen in sentences_in_id:
-        pre_tag = ['s']
-        pre_tag += model.inference_viterbi(sen)
-        pre_tag += ['S']
-        pre_tags.append(pre_tag)
+    pre_tags = [model.inference_viterbi(sen) for sen in sentences]
 
     with open('test_result.txt', 'w+') as f:
-        for sen_raw, sen_tag, sen_pre in zip(sentences, labels, pre_tags):
-            for i in range(1, len(sen_raw)-1):
-                f.write('{}\t{}\t{}\n'.format(sen_raw[i], sen_tag[i], sen_pre[i]))
+        for sen, sen_tag, sen_pre in zip(sentences, labels, pre_tags):
+            for i in range(len(sen)):
+                f.write('{}\t{}\t{}\n'.format(sen[i], sen_tag[i], sen_pre[i]))
             f.write('\n')
 
     print('Test finished!')
 
 
 if __name__ == '__main__':
-    test_file('linear_crf.model', '../data/test.data')
+    test_file('linear_crf.model', '../data/mst_test.data')
 

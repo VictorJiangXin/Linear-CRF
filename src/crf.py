@@ -14,6 +14,7 @@ import pickle
 import numpy as np
 from scipy import optimize
 
+
 class LinearCRF(object):
     """Simple implementation of linear-chain CRF for Chinese word segmentation task.
     
@@ -24,47 +25,50 @@ class LinearCRF(object):
     Unigram template: first character, 'U'
     ('U', pos, word, tag)
     Bigram template: first character, 'B'
-    ('B', pos, word, tag1, tag2)
+    ('B', tag_pre, tag_now)
     You can get more information from my blog (PS. the blog is in Chinese)
     https://victorjiangxin.github.io/Chinese-Word-Segmentation/
     """
-
     def __init__(self):
-        self.ntags = 4  # {'B', 'I', 'E', 'S'}
-        self.index_tag = {0:'B', 1:'I', 2:'E', 3:'S'}
-        self.tag_index = {'B':0, 'I':1, 'E':2, 'S':3}
+        super(LinearCRF, self).__init__()
+        self.ntags = 4 # {'B', 'I', 'E', 'S'}
+        self.index_tag = {} # {0:'B', 1:'I', 2:'E', 3:'S'}
+        self.tag_index = {} # {'B':0, 'I':1, 'E':2, 'S':3}
 
-        self.start_char = '<START>'
-        self.end_char = '<END>'
         self.start_tag = 'S'
         self.end_tag = 'S'
-        self.start_index = self.tag_index[self.start_tag]
-        self.end_index = self.tag_index[self.end_tag]
-
-        self.nwords = 2
-        self.index_word = {0:self.start_char, 1:self.end_char}    # {0:'今', 1:'晚', ..., n:'美'}
-        self.word_index = {self.start_char:0, self.end_char:1}    # {'今':0, '晚':1, ...m, '美':n}
 
         self.U_feature_pos = [-2, -1, 0, 1, 2]
-        self.B_feature_pos = [0]
-        self.nU_features = 5
-        self.nB_features = 1
 
-        self.nfeatures = 0
-        self.feature_index = {} # {('U', 0, word_id, tag_id):0}
-        self.index_feature = {} # {0:('U', 0, word_id, tag_id)}
+        self.index_feature = {} # {0 : ('U', -2, word, tag)}
+        self.feature_index = {} # {('U', -2, word, tag)}
 
         self.nweights = 0
         self.weights = np.zeros(self.nweights)
-        self.theta = 1e-4   # theta should in the range of (1e-6 ~ 1e-3)
+        self.theta = 1e-4 # theta should in the range of (1e-6 ~ 1e-3)
 
 
-    def feature_at(self, k, x, yi_1, yi, i):
-        """Get f_k(yt_1, yt, x, i).
+    def get_word(self, x, i):
+        """Return x[i]
+        """
+        if i == -1:
+            return '_B-1'
+        elif i == -2:
+            return '_B-2'
+        elif i == len(x):
+            return '_B+1'
+        elif i == len(x) + 1:
+            return '_B+2'
+        else:
+            return x[i]
+
+
+    def feature_at(self, k, x, y_pre, y_now, i):
+        """Get f_k(yt_1, yt, x, t).
 
         Args:
             k: (int) the Kth feature
-            x: (list(int)) word list [word_index['<START'>], word_index['今'],]
+            x: str word list [word_index['<START'>], word_index['今'],]
             yi_1: tag of y_[i-1]
             yi: tag of yi
             i: (int) index
@@ -72,35 +76,43 @@ class LinearCRF(object):
         Return:
             1 or 0
         """
-        feature = self.index_feature[k]
-
-        if feature[0] == 'U':
-            _, pos, word, tag = feature
-            if i + pos >= 0 and i + pos <= len(x) - 1 and yi == tag and x[i + pos] == word:
-                return 1
-        elif feature[0] == 'B':
-            _, pos, word, tag1, tag2 = feature
-            if i + pos >= 1 and x[i+pos] == word and yi_1 == tag1 and yi == tag2:
-                return 1
+        if k < self.nweights:
+            feature = self.index_feature[k]
+            if feature[0] == 'U':
+                _, pos, word, tag = feature
+                if y_now == tag and self.get_word(x, i + pos) == word:
+                    return 1
+            elif feature[0] == 'B':
+                _, tag_pre, tag_now = feature
+                if tag_pre == y_pre and tag_now == y_now:
+                    return 1
 
         return 0
 
 
-    def log_M_at(self, x, yi_1, yi, i):
+    def log_M_at(self, x, y_pre, y_now, i):
         """Calc log M(yi_1, yi|x) = W.F_i(yi_1, yi|x)
         """
+        nwords = len(x)
         activate_feature = []
-        for pos in self.U_feature_pos:
-            if pos + i >= 0 and pos + i < len(x):
-                feature = ('U', pos, x[pos + i], yi)
-                if feature in self.feature_index:
-                    activate_feature.append(self.feature_index[feature])
+        if i == 0 and y_pre != self.tag_index[self.start_tag]:
+            return float('-inf')
+        elif i == nwords and y_now != self.tag_index[self.end_tag]:
+            return float('-inf')
+        elif i == nwords and y_now == self.tag_index[self.end_tag]:
+            return 0
 
-        for pos in self.B_feature_pos:
-            if pos + i >= 1 and pos + i < len(x):
-                feature = ('B', pos, x[pos + i], yi_1, yi)
-                if feature in self.feature_index:
-                    activate_feature.append(self.feature_index[feature])
+        # U feature
+        for pos in self.U_feature_pos:
+            feature = ('U', pos, self.get_word(x, i + pos), y_now)
+            if feature in self.feature_index:
+                activate_feature.append(self.feature_index[feature])
+
+        # B feature
+        feature = ('B', y_pre, y_now)
+        if feature in self.feature_index:
+            activate_feature.append(self.feature_index[feature])
+
         return self.weights[activate_feature].sum()
 
 
@@ -108,20 +120,24 @@ class LinearCRF(object):
         """Get log probablity matrix M(x)
 
         Return:
-            M(x): tensor(nwords_x+2, ntags, ntags) M(0) means nothing
+            M(x): tensor(nwords_x+1, ntags, ntags)
         """
-        nwords_x = len(x) - 2   # x include '<START>' and '<END>'
-        M = np.zeros((nwords_x + 2, self.ntags, self.ntags))
-        for i in range(1, nwords_x + 2):
-            for tag1 in range(self.ntags):
-                for tag2 in range(self.ntags):
-                    M[i, tag1, tag2] = self.log_M_at(x, tag1, tag2, i)
+        nwords = len(x)
+        M = np.ones((nwords + 1, self.ntags, self.ntags)) * float('-inf')
+        for i in range(nwords + 1):
+            for tag_pre in range(self.ntags):
+                for tag_now in range(self.ntags):
+                    M[i, tag_pre, tag_now] = self.log_M_at(x, tag_pre, tag_now, i)
         return M
 
 
-    def log_sum_exp(self, arr):
-        max_value = np.max(arr) # For numerically stablity
-        return max_value + np.log(np.sum(np.exp(arr - max_value)))
+    def log_sum_exp(self, a, b):
+        """
+        a = [a1, a2, a3]
+        b = [b1, b2, b3]
+        return log(e^a1*e^b1+e^a2*e^b2+e^a3*e^b3)
+        """
+        return np.log(np.sum(np.exp(a) * np.exp(b)))
 
 
     def log_alpha(self, x, M=None):
@@ -137,16 +153,17 @@ class LinearCRF(object):
         Return:
             alpha: tensor(nwords_x+1, ntags)
         """
-        nwords_x = len(x) - 2
-        alpha = np.zeros((nwords_x + 1, self.ntags))
+        nwords = len(x)
+        alpha = np.ones((nwords + 1, self.ntags)) * float('-inf')
 
         if M is None:
             M = self.log_M(x)
 
-        alpha[1] = M[1, self.start_index, :]
-        for i in range(2, nwords_x + 1):
+        alpha[0] = M[0, self.tag_index[self.start_tag], :]
+        for i in range(1, nwords + 1):
             for tag in range(self.ntags):
-                alpha[i, tag] = self.log_sum_exp(alpha[i-1] + M[i, :, tag])
+                alpha[i, tag] = self.log_sum_exp(alpha[i - 1], 
+                                                M[i, :, tag])
         return alpha
 
 
@@ -154,6 +171,8 @@ class LinearCRF(object):
         """Get backward probablity log b(i, x)
 
         b(i, x, Yt) = sum_{y}M(i, x, Yt, y)b(i+1, x, y)
+        Warnning: because beta[len(x)] = [0, 0, 0, 1] is certain
+        so we use beta[len(x)] to store beta[-1]
         
         Args:
             x: sequence
@@ -162,50 +181,57 @@ class LinearCRF(object):
         Return:
             beta: tensor(nwords_x+1, ntags)
         """
-        nwords_x = len(x) - 2
-        beta = np.zeros((nwords_x + 1, self.ntags))
+        nwords = len(x)
+        beta = np.ones((nwords + 1, self.ntags)) * float('-inf')
 
         if M is None:
             M = self.log_M(x)
 
-        beta[nwords_x] = M[nwords_x+1, :, self.end_index]
-        for i in range(nwords_x - 1, 0, -1):
+        beta[nwords - 1] = 0 # because the last one must be 'S'
+        for i in range(nwords - 2, -2, -1):
             for tag in range(self.ntags):
-                beta[i, tag] = self.log_sum_exp(beta[i+1] + M[i+1, tag, :])
+                beta[i, tag] = self.log_sum_exp(beta[i + 1], 
+                                                M[i + 1, tag, :])
         return beta
 
 
-    def log_z(self, x, M=None, beta=None):
+    def log_z(self, x, M=None, alpha=None):
         """Get log Z(x)
         """
-        nwords_x = len(x) - 2
+        nwords = len(x)
 
         if M is None:
             M = self.log_M(x)
-        if beta is None:
-            beta = self.log_beta(x, M)
 
-        z = self.log_sum_exp(beta[1] + M[1, self.start_index, :])
-        return z
+        if alpha is None:
+            alpha = self.log_alpha(x, M)
+
+        return alpha[nwords, self.tag_index[self.end_tag]]
 
 
-    def log_potential(self, x, y, M=None, beta=None):
+    def log_potential(self, x, y, M=None, alpha=None):
         """Calculate log p(y|x).
 
         log p(y|x) = log exp(sum(W.Feature)) - log Z(x)
         """
-        nwords_x = len(y) - 2   # every sentence include <START> and <END>
+        nwords = len(x)
 
         if M is None:
             M = self.log_M(x)
-        if beta is None:
-            beta = self.log_beta(x, M)
+        if alpha is None:
+            alpha = self.log_alpha(x, M)
 
         log_p = 0
-        for i in range(1, nwords_x + 1):
-            log_p += self.log_M_at(x, y[i-1], y[i], i)
-        z = self.log_z(x, M, beta)
+        for i in range(nwords):
+            if i == 0:
+                log_p += self.log_M_at(x, self.tag_index[self.start_tag], 
+                                        y[i], i)
+            else:
+                log_p += self.log_M_at(x, y[i - 1], y[i], i)
+
+        z = self.log_z(x, M, alpha)
         log_p -= z
+
         return log_p
 
 
@@ -215,28 +241,27 @@ class LinearCRF(object):
         Return:
             y_char: ['B', 'S', ..., ] in char not in int
         """
-        nwords_x = len(x) - 2
-        delta = np.zeros((nwords_x + 1, self.ntags))
-        trace = np.zeros((nwords_x + 1, self.ntags), dtype='int')
+        nwords = len(x)
+        delta = np.zeros((nwords, self.ntags))
+        trace = np.zeros((nwords, self.ntags), dtype='int')
 
         if M is None:
             M = self.log_M(x)
-        
-        delta[1] = M[1, self.start_index, :]
-        for i in range(2, nwords_x + 1):
+
+        delta[0] = M[0, self.tag_index[self.start_tag], :]
+        for i in range(1, nwords):
             for tag in range(self.ntags):
-                delta[i, tag] = np.max(delta[i-1] + M[i, :, tag])
+                delta[i, tag] = np.max(delta[i - 1] + M[i, :, tag])
                 trace[i, tag] = np.argmax(delta[i-1] + M[i, :, tag])
 
-        y_char = nwords_x * [self.start_tag]
-        best = np.argmax(delta[nwords_x])
-        y_char[nwords_x - 1] = self.index_tag[best]
+        y_char = nwords * [self.start_tag]
+        best = np.argmax(delta[nwords - 1])
+        y_char[nwords - 1] = self.index_tag[best]
 
-        index = nwords_x - 1
-        while index > 0:
-            best = trace[index + 1][best]
-            y_char[index - 1] = self.index_tag[best]
-            index -= 1
+        for i in range(nwords - 2, -1, -1):
+            best = trace[i + 1, best]
+            y_char[i] = self.index_tag[best]
+
         return y_char
 
 
@@ -247,7 +272,7 @@ class LinearCRF(object):
         One item in gradient, get more information from
         https://victorjiangxin.github.io/Chinese-Word-Segmentation/
         """
-        nwords_x = len(x) - 2
+        nwords = len(x)
 
         if M is None:
             M = self.log_M(x)
@@ -256,36 +281,40 @@ class LinearCRF(object):
         if beta is None:
             beta = self.log_beta(x, M)
 
-        z = self.log_z(x, M, beta)
-        P = np.zeros((nwords_x + 1, self.ntags, self.ntags))
+        z = self.log_z(x, M, alpha)
+        P = np.zeros((nwords, self.ntags, self.ntags))
         gradient = np.zeros(self.nweights)
 
-        for i in range(1, nwords_x + 1):
-            for yi_1 in range(self.ntags):
-                for yi in range(self.ntags):
-                    if i == 1 and yi_1 != self.start_index:
-                        continue
-                    P[i, yi_1, yi] = alpha[i-1, yi_1] + M[i, yi_1, yi] + beta[i, yi] - z
+        for i in range(nwords):
+            for y_pre in range(self.ntags):
+                for y_now in range(self.ntags):
+                    if i == 0 and y_pre != self.tag_index[self.start_tag]:
+                        pass
+                    elif i == 0 and y_pre == self.tag_index[self.start_tag]:
+                        P[i, y_pre, y_now] = M[i, y_pre, y_now] + beta[i, y_now] - z
+                    else:
+                        P[i, y_pre, y_now] = alpha[i - 1, y_pre] +\
+                                            M[i, y_pre, y_now] + beta[i, y_now] - z
 
-        # gradient = p(x, yi_1, yi) * C_k(x, yi_1, yi), not log p(x, yi_1, yi)!!
         P = np.exp(P)
-        activate_feature = []
-        for i in range(1, nwords_x + 1):
-            for yi_1 in range(self.ntags):
-                for yi in range(self.ntags):
+        for i in range(nwords):
+            for y_pre in range(self.ntags):
+                for y_now in range(self.ntags):
+                    activate_feature = []
                     # U feature
                     for pos in self.U_feature_pos:
-                        if pos + i >= 0 and pos + i < len(x):
-                            feature = ('U', pos, x[pos + i], yi)
-                            if feature in self.feature_index:
-                                activate_feature.append(self.feature_index[feature])
+                        feature = ('U', pos, self.get_word(x, i + pos), y_now)
+                        if feature in self.feature_index:
+                            activate_feature.append(self.feature_index[feature])
+
                     # B feature
-                    for pos in self.B_feature_pos:
-                        if pos + i >= 1 and pos + i < len(x):
-                            feature = ('B', pos, x[pos + i], yi_1, yi)
-                            if feature in self.feature_index:
-                                activate_feature.append(self.feature_index[feature])
-                    gradient[activate_feature] += P[i, yi_1, yi]
+                    if i == 0 and y_pre != self.tag_index[self.start_tag]:
+                        pass
+                    else:
+                        feature = ('B', y_pre, y_now)
+                        if feature in self.feature_index:
+                            activate_feature.append(self.feature_index[feature])
+                    gradient[activate_feature] += P[i, y_pre, y_now]
 
         return gradient
 
@@ -300,7 +329,7 @@ class LinearCRF(object):
             M = self.log_M(x)
             alpha = self.log_alpha(x, M)
             beta = self.log_beta(x, M)
-            likelihood += self.log_potential(x, y, M, beta)
+            liktlihood += self.log_potential(x, y, M, alpha)
             gradient -= self.model_gradient_x(x, M, alpha, beta)
         # add regulariser
         likelihood = likelihood - np.dot(self.weights, self.weights) * self.theta / 2
@@ -309,14 +338,16 @@ class LinearCRF(object):
         return -likelihood, -gradient
 
 
-    def train(self, file_name, model_path=None):
+    def train(self, file_name):
         """Train this model
 
         Args:
             file_name: corpus file
         """
-        if model_path is not None:
-            self.load(model_path)
+        print('Start training!')
+        self.ntags = 4
+        self.index_tag = {0:'B', 1:'I', 2:'E', 3:'S'}
+        self.tag_index = {'B':0, 'I':1, 'E':2, 'S':3}
 
         sentences = []
         labels = []
@@ -325,82 +356,78 @@ class LinearCRF(object):
         lines = f.readlines()
         f.close()
 
-        sentence = [self.start_char]
-        label = [self.start_tag]
+        words = []
+        sentence = []
+        label = []
         for line in lines:
             if len(line) < 2:
                 # sentence end
-                sentence.append(self.end_char)
-                label.append(self.end_tag)
                 if len(sentence) > 3:
                     sentences.append(sentence)
                     labels.append(label)
-                
-                sentence = [self.start_char]
-                label = [self.start_tag]
+                sentence = []
+                label = []
             else:
                 char, tag = line.split()
                 sentence.append(char)
                 label.append(tag)
-                if char not in self.word_index:
-                    self.word_index[char] = self.nwords
-                    self.index_word[self.nwords] = char
-                    self.nwords += 1
+                if char not in words:
+                    words.append(char)
 
-        print("Total words in corpus is {}".format(self.nwords))
+        print("Total sentences is {}".format(len(sentences)))
+        print("Total words in corpus is {}".format(len(words)))
         print("sentence[0]:{} labels[0]:{}".format(''.join(sentences[0]), ''.join(labels[0])))
 
-        feature_id = 0
-        for pos in self.U_feature_pos:
-            for word in range(self.nwords):
-                for tag in range(self.ntags):
-                    feature = ('U', pos, word, tag)
-                    self.feature_index[feature] = feature_id
-                    self.index_feature[feature_id] = feature
-                    feature_id += 1
-
-        for pos in self.B_feature_pos:
-            for word in range(self.nwords):
-                for yi_1 in range(self.ntags):
-                    for yi in range(self.ntags):
-                        feature = ('B', pos, word, yi_1, yi)
-                        self.feature_index[feature] = feature_id
-                        self.index_feature[feature_id] = feature
-                        feature_id += 1
-
-        self.nfeatures = feature_id
-        self.nweights = self.nfeatures
-        prior_feature_count = np.zeros(self.nfeatures)
-        self.weights = np.random.randn(self.nweights)
-
-        print("Feature nums: {}".format(self.nfeatures))
-
-        sentences = [[self.word_index[char] for char in s] for s in sentences]
         labels = [[self.tag_index[tag] for tag in label] for label in labels]
-
-        print("sentence[0]:\n{}\n labels[0]:\n{}\n".format(sentences[0], labels[0]))
-
-        train_data = [(x, y) for (x, y) in zip(sentences, labels)]
+        train_data = zip(sentences, labels)
 
         del sentences
         del labels
-        # get C(y, x)
-        for x, y in train_data:
-            n = len(x) - 2
-            for i in range(1, n + 1):
-                activate_feature = []
+
+        # construct features
+        # B features
+        feature_id = 0
+        for tag_pre in range(self.ntags):
+            for tag_now in range(self.ntags):
+                feature = ('B', tag_pre, tag_now)
+                self.feature_index[feature] = feature_id
+                self.index_feature[feature_id] = feature
+                feature_id += 1
+
+        # U features
+        for x, _ in train_data:
+            nwords = len(x)
+            for i in range(nwords):
                 for pos in self.U_feature_pos:
-                    if pos + i >= 0 and pos + i < len(x):
-                        feature = ('U', pos, x[pos + i], y[i])
-                        if feature in self.feature_index:
-                            activate_feature.append(self.feature_index[feature])
+                    for tag in range(self.ntags):
+                        feature = ('U', pos, self.get_word(x, i + pos), tag)
+                        if feature not in self.feature_index:
+                            self.feature_index[feature] = feature_id
+                            self.index_feature[feature_id] = feature
+                            feature_id += 1
 
-                for pos in self.B_feature_pos:
-                    if pos + i >= 1 and pos + i < len(x):
-                        feature = ('B', pos, x[pos + i], y[i-1], y[i])
-                        if feature in self.feature_index:
-                            activate_feature.append(self.feature_index[feature])
+        self.nweights = len(self.feature_index)
+        self.weights = np.random.randn(self.nweights)
+        print('Total features is {}'.format(self.nweights))
+        print('Feature[0]={}, Feature[16]={}', self.index_feature[0],
+                                             self.index_feature[16])
 
+        print('Statistic Count of feature k ....')
+        prior_feature_count = np.zeros(self.nweights)
+        for x, y in train_data:
+            nwords = len(x)
+            for i in range(nwords):
+                activate_feature = []
+                # U feature
+                for pos in self.U_feature_pos:
+                    feature = ('U', pos, self.get_word(x, i + pos), y[i])
+                    activate_feature.append(feature)
+                # B feature
+                if i == 0:
+                    feature = ('B', self.tag_index[self.start_tag], y[i])
+                else:
+                    feature = ('B', y[i - 1], y[i])
+                activate_feature.append(feature)
                 prior_feature_count[activate_feature] += 1
 
         print("prior_feature_count[0]: {} {}".format(self.index_feature[0], prior_feature_count[0]))
@@ -413,18 +440,16 @@ class LinearCRF(object):
         print("Training time:{}s".format(time.time() - start_time))
 
         self.save()
-        
+
 
     def save(self, file_path='linear_crf.model'):
         save_dict = {}
-        save_dict['nwords'] = self.nwords
-        save_dict['nfeatures'] = self.nfeatures
+        save_dict['ntags'] = self.ntags
+        save_dict['index_tag'] = self.index_tag
+        save_dict['tag_index'] = self.tag_index
         save_dict['feature_index'] = self.feature_index
         save_dict['index_feature'] = self.index_feature
-        save_dict['index_word'] = self.index_word
-        save_dict['word_index'] = self.word_index
         save_dict['nweights'] = self.nweights
-        save_dict['index_word'] = self.index_word
         save_dict['weights'] = self.weights
         with open(file_path, 'wb') as f:
             pickle.dump(save_dict, f)
@@ -435,15 +460,105 @@ class LinearCRF(object):
         with open(file_path, 'rb') as f:
             save_dict = pickle.load(f)
 
-        self.nwords = save_dict['nwords']
-        self.nfeatures = save_dict['nfeatures']
+        self.ntags = save_dict['ntags']
+        self.index_tag = save_dict['index_tag']
+        self.tag_index = save_dict['tag_index']
         self.feature_index = save_dict['feature_index']
         self.index_feature = save_dict['index_feature'] 
-        self.index_word = save_dict['index_word']
-        self.word_index = save_dict['word_index']
         self.nweights = save_dict['nweights']
-        self.index_word = save_dict['index_word']
         self.weights = save_dict['weights']
 
         print("Load model successful!")
+
+
+    def load_crfpp_model(self, model_path):
+        """Load model which is trained by crf++
+        """
+        with open(model_path, 'r') as f:
+            lines = f.readlines()
+
+        tags_id = 0
+
+        i = 0
+        # print plus information
+        while i < len(lines) and lines[i] != '\n':
+            line = lines[i].strip()
+            print(line)
+            i += 1
+
+        i += 1
+        # get tags 
+        while i < len(lines) and lines[i] != '\n':
+            line = lines[i].strip()
+            self.tag_index[line] = tags_id
+            self.index_tag[tags_id] = line
+            tags_id += 1
+            i += 1
+
+        self.ntags = len(self.tag_index)
+        print(self.tag_index)
+
+        i += 1
+        # map
+        feature_map = {} # {'U00', -2}
+        self.U_feature_pos = []
+        while i < len(lines) and lines[i] != '\n':
+            line = lines[i].strip()
+            if line != 'B':
+                feature_template = line.split(':')[0]
+                pos = line.split('[')[1].split(',')[0]
+                feature_map[feature_template] = int(pos)
+                self.U_feature_pos.append(int(pos))
+            i += 1
+        print('self.U_feature_pos', self.U_feature_pos)
+        print('feature_map:', feature_map)
+
+        i += 1
+        # construct feature
+        feature_id = 0
+        while i < len(lines) and lines[i] != '\n':
+            line = lines[i].strip().split()[1]
+            if line == 'B':
+                for tag_pre in range(self.ntags):
+                    for tag_now in range(self.ntags):
+                        feature = ('B', tag_pre, tag_now)
+                        self.feature_index[feature] = feature_id
+                        self.index_feature[feature_id] = feature
+                        feature_id += 1
+            else:
+                feature_template = line.split(':')[0]
+                word = line.split(':')[1]
+                pos = feature_map[feature_template]
+                for tag in range(self.ntags):
+                    feature = ('U', pos, word, tag)
+                    self.feature_index[feature] = feature_id
+                    self.index_feature[feature_id] = feature
+                    feature_id += 1
+            i += 1
+
+        print('Total features:', len(self.feature_index))
+        i += 1
+        # read weights
+        self.nweights = len(self.feature_index)
+        self.weights = np.zeros(self.nweights)
+        feature_id = 0
+        while i < len(lines) and lines[i] != '\n':
+            line = lines[i].strip()
+            self.weights[feature_id] = float(line)
+            feature_id += 1
+            i += 1
+
+        print('Record weights = ', feature_id)
+        print("The last feature is {}, it's weight is {}".format(
+                    self.index_feature[feature_id-1], self.weights[feature_id-1]))
+        self.save()
+
+
+
+
+
+
+
+
+
 
