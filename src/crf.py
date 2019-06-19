@@ -10,7 +10,6 @@ import time
 
 import pickle
 import codecs
-import pickle
 import numpy as np
 from scipy import optimize
 

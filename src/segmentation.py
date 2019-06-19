@@ -7,7 +7,7 @@ class Segmentation(object):
         self.model.load(model_path)
 
 
-    def chinese_word_segmentation(self, sentence):
+    def seg(self, sentence):
         sentence.strip()
         tags = self.model.inference_viterbi(sentence)
 
@@ -16,4 +16,5 @@ class Segmentation(object):
             str_seg += word
             if tag == 'S' or tag == 'E':
                 str_seg += ' '
-        return str_seg
+        result = str_seg.split()
+        return result

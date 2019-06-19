@@ -1,0 +1,4 @@
+pickle
+codecs
+scipy
+numpy
