@@ -40,7 +40,7 @@ You can change the test file by altering the path in test.py.
 # How to eval
 ```
 $ cd utils
-$ python eval
+$ python eval.py
 ```
 # How to train
 Firstly, you should change the corpus into this format.  
