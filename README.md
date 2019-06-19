@@ -8,6 +8,7 @@ Li Bo(李博)
 Li Zhenlong(栗正隆)
 # Performance
 $$F1 = 2 * P * R / (P + R)$$
+
 | Corpus | P | R | F1 |
 | ------ | ---- | ---- | ---- |
 | msr | 76.84263691915065 | 80.16949059509177 | 78.47081821412925 |
@@ -71,5 +72,5 @@ $ python
 >>> model.load_crfpp_model('crfpp.pku.model')
 ```
 # Others
-Welcome to see my blog[blog](https://victorjiangxin.github.io/Chinese-Word-Segmentation/)
+Welcome to see my[blog](https://victorjiangxin.github.io/Chinese-Word-Segmentation/)
 
