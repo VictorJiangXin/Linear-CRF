@@ -137,7 +137,12 @@ class LinearCRF(object):
         b = [b1, b2, b3]
         return log(e^a1*e^b1+e^a2*e^b2+e^a3*e^b3)
         """
-        return np.log(np.sum(np.exp(a) * np.exp(b)))
+        bound = float('-inf')
+        if bound in a or bound in b: 
+            return np.log(np.sum(np.exp(a) * np.exp(b)))
+        c = a + b
+        max_value = np.max(c)
+        return max_value + np.log(np.sum(np.exp(c - max_value)))
 
 
     def log_alpha(self, x, M=None):
@@ -329,7 +334,7 @@ class LinearCRF(object):
             M = self.log_M(x)
             alpha = self.log_alpha(x, M)
             beta = self.log_beta(x, M)
-            liktlihood += self.log_potential(x, y, M, alpha)
+            likelihood += self.log_potential(x, y, M, alpha)
             gradient -= self.model_gradient_x(x, M, alpha, beta)
         # add regulariser
         likelihood = likelihood - np.dot(self.weights, self.weights) * self.theta / 2
@@ -379,7 +384,9 @@ class LinearCRF(object):
         print("sentence[0]:{} labels[0]:{}".format(''.join(sentences[0]), ''.join(labels[0])))
 
         labels = [[self.tag_index[tag] for tag in label] for label in labels]
-        train_data = zip(sentences, labels)
+        train_data = []
+        for x, y in zip(sentences, labels):
+            train_data.append((x, y))
 
         del sentences
         del labels
@@ -409,9 +416,7 @@ class LinearCRF(object):
         self.nweights = len(self.feature_index)
         self.weights = np.random.randn(self.nweights)
         print('Total features is {}'.format(self.nweights))
-        print('Feature[0]={}, Feature[16]={}', self.index_feature[0],
-                                             self.index_feature[16])
-
+        print('Feature[0]={}, Feature[16]={}'.format(self.index_feature[0], self.index_feature[16]))
         print('Statistic Count of feature k ....')
         prior_feature_count = np.zeros(self.nweights)
         for x, y in train_data:
@@ -421,16 +426,15 @@ class LinearCRF(object):
                 # U feature
                 for pos in self.U_feature_pos:
                     feature = ('U', pos, self.get_word(x, i + pos), y[i])
-                    activate_feature.append(feature)
+                    activate_feature.append(self.feature_index[feature])
                 # B feature
                 if i == 0:
                     feature = ('B', self.tag_index[self.start_tag], y[i])
                 else:
                     feature = ('B', y[i - 1], y[i])
-                activate_feature.append(feature)
+                activate_feature.append(self.feature_index[feature])
                 prior_feature_count[activate_feature] += 1
-
-        print("prior_feature_count[0]: {} {}".format(self.index_feature[0], prior_feature_count[0]))
+        print("prior_feature_count[2]: {} {}".format(self.index_feature[2], prior_feature_count[2]))
 
         print("Start training!")
         func = lambda weights : self.neg_likelihood_and_gradient(weights, prior_feature_count, train_data)
