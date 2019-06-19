@@ -59,5 +59,5 @@ def test_file(model_path, test_file_path):
 
 
 if __name__ == '__main__':
-    test_file('linear_crf.model', '../data/mst_test.data')
+    test_file('model/linear_crf.model', '../data/pku_test.data')
 

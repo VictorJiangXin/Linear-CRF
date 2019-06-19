@@ -247,6 +247,8 @@ class LinearCRF(object):
             y_char: ['B', 'S', ..., ] in char not in int
         """
         nwords = len(x)
+        if nwords < 1:
+            return 'S'
         delta = np.zeros((nwords, self.ntags))
         trace = np.zeros((nwords, self.ntags), dtype='int')
 
@@ -517,10 +519,13 @@ class LinearCRF(object):
         print('self.U_feature_pos', self.U_feature_pos)
         print('feature_map:', feature_map)
 
+
         i += 1
         # construct feature
         feature_id = 0
+        feature_id_weight_index = {}    # in model.txt weight are not in 
         while i < len(lines) and lines[i] != '\n':
+            weight_index = int(lines[i].strip().split()[0])
             line = lines[i].strip().split()[1]
             if line == 'B':
                 for tag_pre in range(self.ntags):
@@ -528,6 +533,8 @@ class LinearCRF(object):
                         feature = ('B', tag_pre, tag_now)
                         self.feature_index[feature] = feature_id
                         self.index_feature[feature_id] = feature
+                        feature_id_weight_index[feature_id] = weight_index
+                        weight_index += 1
                         feature_id += 1
             else:
                 feature_template = line.split(':')[0]
@@ -537,6 +544,8 @@ class LinearCRF(object):
                     feature = ('U', pos, word, tag)
                     self.feature_index[feature] = feature_id
                     self.index_feature[feature_id] = feature
+                    feature_id_weight_index[feature_id] = weight_index
+                    weight_index += 1
                     feature_id += 1
             i += 1
 
@@ -545,13 +554,14 @@ class LinearCRF(object):
         # read weights
         self.nweights = len(self.feature_index)
         self.weights = np.zeros(self.nweights)
-        feature_id = 0
+        weights_in_file = []
         while i < len(lines) and lines[i] != '\n':
             line = lines[i].strip()
-            self.weights[feature_id] = float(line)
-            feature_id += 1
+            weights_in_file.append(float(line))
             i += 1
 
+        for feature_id in feature_id_weight_index:
+            self.weights[feature_id] = weights_in_file[feature_id_weight_index[feature_id]]
         print('Record weights = ', feature_id)
         print("The last feature is {}, it's weight is {}".format(
                     self.index_feature[feature_id-1], self.weights[feature_id-1]))
