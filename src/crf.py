@@ -336,7 +336,7 @@ class LinearCRF(object):
             alpha = self.log_alpha(x, M)
             beta = self.log_beta(x, M)
             likelihood += self.log_potential(x, y, M, alpha)
-            gradient -= self.model_gradient_x(x, M, alpha, beta)
+            gradient += self.model_gradient_x(x, M, alpha, beta)
         # add regulariser
         likelihood = likelihood - np.dot(self.weights, self.weights) * self.theta / 2
         gradient = prior_feature_count - gradient - self.weights * self.theta
