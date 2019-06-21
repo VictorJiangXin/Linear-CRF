@@ -62,7 +62,7 @@ if __name__=='__main__':
     
     tools = ['crf']
 
-    """
+    
     print('msr test...')
     for cur in tools:
         seg_test(seg, cur, 'msr')
@@ -77,7 +77,7 @@ if __name__=='__main__':
     print('other test...')
     for cur in tools:
         seg_test(seg, cur, 'other')
-    """
+    
     print()
     print('weibo test...')
     for cur in tools:
@@ -85,7 +85,7 @@ if __name__=='__main__':
 
         
     print('-----------------------------------')
-    """
+    
     print('msr value...')
     for cur in tools:
         test_value(cur, 'msr')
@@ -97,7 +97,7 @@ if __name__=='__main__':
     print('other value...')
     for cur in tools:
         test_value(cur, 'other')
-    """
+    
     print('weibo value...')
     for cur in tools:
         test_value(cur, 'weibo')
