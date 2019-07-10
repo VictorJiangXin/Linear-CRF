@@ -27,6 +27,9 @@ pip install -r requirements.txt
 ```
 # How to use
 ```
+root@:path$ python demo.py
+```
+```
 >>> from segmentation import *
 >>> ucas_seg = Segmentation() # also you can load your model ucas_seg = Segmentation('your_model')
 >>> sentence = '今晚的月色真美呀。'
