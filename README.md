@@ -46,7 +46,7 @@ $ cd utils
 $ python eval.py
 ```
 # How to train
-Firstly, you should change the corpus into this format.  
+First, you need transform the corpus into this format.  
 ```
 今   B
 晚   E
