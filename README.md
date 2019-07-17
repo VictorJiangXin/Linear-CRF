@@ -60,7 +60,7 @@ First, you need transform the corpus into this format.
 ```
 You can use `src/utils/make_crf_trainset.py` to convert your corpus.
 
-Then, you have to kinds of ways to train your model.  
+Then, you have two kinds of ways to train your model.  
 You can use python to train your model. Python don't support multithreading, so this way will cost lots of time to train your model.   
 ```
 cd 'src'
